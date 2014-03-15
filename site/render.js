@@ -313,6 +313,7 @@
 	var surface = overlay.getContext("2d");
 
 	var docomputersdream = new TextLineRender(["DO", "COMPUTERS", "DREAM?", "ZzzZzzz"], 0.2, 0.2, "red", "40px Iceland", 40, 10);
+	var dropSomething = new TextLineRender(["DRAG AND DROP A PHOTO", "SHARE WITH EVERYONE", "AND LET COMPUTER DREAM", "HTTP://GITHUB.COM/LIULIU/DOCOMPUTERSDREAM"], 0.2, 0.2, "red", "20px Iceland", 20, 3);
 
 	var dreamDejavu = new Channel(2, function () {
 		// this can be fired before the result is back
@@ -334,15 +335,14 @@
 	var canvasOpacity = 0;
 
 	function render() {
-		if (image.src) {
+		if (image && image.src) {
 			// only draws if we have image
 			surface.clearRect(0, 0, overlay.width, overlay.height);
 			for (var i = 0; i < rects.length; i++) {
 				rects[i].draw(surface);
 			}
-			if (docomputersdream) {
-				docomputersdream.draw(surface, 20, 25);
-			}
+			docomputersdream.draw(surface, 20, 25);
+			dropSomething.draw(surface, 22, overlay.height - 100);
 			if (classify) {
 				classify.draw(surface, 20, 25);
 			}
@@ -354,9 +354,8 @@
 			for (var i = 0; i < rects.length; i++) {
 				rects[i].tick();
 			}
-			if (docomputersdream) {
-				docomputersdream.tick();
-			}
+			docomputersdream.tick();
+			dropSomething.tick();
 			if (classify) {
 				classify.tick();
 			}
@@ -365,22 +364,21 @@
 
 	setInterval(render, 50);
 
-	var image = new Image();
+	var image = null;
 
-	function redraw(image) {
+	function resizeViewport(naturalWidth, naturalHeight) {
 		var blur = document.getElementById("blur");
 		var canvas = document.getElementById("output");
-		var ctx = canvas.getContext("2d");
+		var viewport = document.getElementById("viewport");
 		var boundingWidth = document.getElementById("content").offsetWidth - 80;
 		var boundingHeight = window.innerHeight - 120;
-		var viewport = document.getElementById("viewport");
-		var newWidth = image.naturalWidth, newHeight = image.naturalHeight;
-		if (image.naturalWidth * boundingHeight > boundingWidth * image.naturalHeight) {
+		var newWidth = naturalWidth, newHeight = naturalHeight;
+		if (naturalWidth * boundingHeight > boundingWidth * naturalHeight) {
 			newWidth = boundingWidth;
-			newHeight = Math.round(boundingWidth * image.naturalHeight / image.naturalWidth);
+			newHeight = Math.round(boundingWidth * naturalHeight / naturalWidth);
 		} else {
 			newHeight = boundingHeight;
-			newWidth = Math.round(boundingHeight * image.naturalWidth / image.naturalHeight);
+			newWidth = Math.round(boundingHeight * naturalWidth / naturalHeight);
 		}
 		viewport.style.width = newWidth.toString() + "px";
 		viewport.style.height = newHeight.toString() + "px";
@@ -391,6 +389,18 @@
 		overlay.style.width = canvas.style.width = blur.style.width = newWidth.toString() + "px";
 		overlay.height = canvas.height = blur.height = newHeight;
 		overlay.style.height = canvas.style.height = blur.style.height = newHeight.toString() + "px";
+		return {
+			width: newWidth,
+			height: newHeight
+		}
+	}
+
+	function redraw(image) {
+		var blur = document.getElementById("blur");
+		var canvas = document.getElementById("output");
+		var ctx = canvas.getContext("2d");
+		var newSize = resizeViewport(image.naturalWidth, image.naturalHeight);
+		var newWidth = newSize.width, newHeight = newSize.height;
 		ctx.drawImage(image, 0, 0, newWidth, newHeight);
 		blur.getContext("2d").drawImage(image, 0, 0, newWidth, newHeight);
 		stackBlurCanvasRGBA("blur", 0, 0, newWidth, newHeight, 10);
@@ -413,10 +423,53 @@
 		stackBlurCanvasRGBA("background", 0, 0, window.innerWidth, window.innerHeight, 8);
 	}
 
-	image.onload = function () {
+	function imageReload() {
 		docomputersdream.restart();
 		redraw(image);
 	};
+
+	function parseDream(response) {
+		var lines = [];
+		for (var i = 0; i < response.classify.length; i++) {
+			var words = response.classify[i].word.split(",");
+			lines.push(words[0].toUpperCase());
+		}
+		classify = new TextLineRender(lines, 0.2, 0.2, "blue", "40px Iceland", 40, 10);
+		classify.setDone(function () {
+			dropSomething.start();
+		});
+		for (var i = 0; i < response.face.length; i++) {
+			if (response.face[i].width * overlay.width * response.face[i].height * overlay.height > 40 * 40) {
+				var rect = new RectHeaderRender(response.face[i], "A Face", 12, "rgba(0,255,0,0.7)");
+				rects.push(rect);
+			}
+		}
+		for (var i = 0; i < response.car.length; i++) {
+			if (response.car[i].width * overlay.width * response.car[i].height * overlay.height > 120 * 60) {
+				var rect = new RectHeaderRender(response.car[i], "A Car", 12, "rgba(255,255,0,0.7)");
+				rects.push(rect);
+			}
+		}
+		for (var i = 0; i < response.pedestrian.length; i++) {
+			var rect = new RectFlagRender(response.pedestrian[i], "Person", 12, "rgba(0,255,128,0.7)");
+			rects.push(rect);
+		}
+		for (var i = 0; i < response.word.length; i++) {
+			if (response.word[i].width * overlay.width * response.word[i].height * overlay.height > 40 * 20 && response.word[i].word.trim().length > 0) {
+				var rect = new RectFlagRender(response.word[i], response.word[i].word, 12, "rgba(255,128,0,0.7)");
+				rects.push(rect);
+			}
+		}
+		shuffle(rects);
+		for (var i = 0; i < rects.length - 1; i++) {
+			(function (i) {
+				rects[i].setDone(function () {
+					rects[i + 1].start();
+				});
+			})(i);
+		}
+		dreamDejavu.do();
+	}
 
 	function dreamRemotely(file) {
 		classify = null;
@@ -427,43 +480,8 @@
 		request.open("POST", "/api/ccv");
 		request.onload = function () {
 			var response = JSON.parse(this.responseText);
-			var lines = [];
-			for (var i = 0; i < response.classify.length; i++) {
-				var words = response.classify[i].word.split(",");
-				lines.push(words[0].toUpperCase());
-			}
-			classify = new TextLineRender(lines, 0.2, 0.2, "blue", "40px Iceland", 40, 10);
-			for (var i = 0; i < response.face.length; i++) {
-				if (response.face[i].width * overlay.width * response.face[i].height * overlay.height > 40 * 40) {
-					var rect = new RectHeaderRender(response.face[i], "A Face", 12, "rgba(0,255,0,0.7)");
-					rects.push(rect);
-				}
-			}
-			for (var i = 0; i < response.car.length; i++) {
-				if (response.car[i].width * overlay.width * response.car[i].height * overlay.height > 120 * 60) {
-					var rect = new RectHeaderRender(response.car[i], "A Car", 12, "rgba(255,255,0,0.7)");
-					rects.push(rect);
-				}
-			}
-			for (var i = 0; i < response.pedestrian.length; i++) {
-				var rect = new RectFlagRender(response.pedestrian[i], "A Person", 12, "rgba(0,255,128,0.7)");
-				rects.push(rect);
-			}
-			for (var i = 0; i < response.word.length; i++) {
-				if (response.word[i].width * overlay.width * response.word[i].height * overlay.height > 40 * 20 && response.word[i].word.trim().length > 0) {
-					var rect = new RectFlagRender(response.word[i], response.word[i].word, 12, "rgba(255,128,0,0.7)");
-					rects.push(rect);
-				}
-			}
-			shuffle(rects);
-			for (var i = 0; i < rects.length - 1; i++) {
-				(function (i) {
-					rects[i].setDone(function () {
-						rects[i + 1].start();
-					});
-				})(i);
-			}
-			dreamDejavu.do();
+			image.url = response.url;
+			parseDream(response.meta);
 		};
 		request.send(formData);
 	}
@@ -472,10 +490,13 @@
 		if (file.type.match(/image.*/)) {
 			var reader = new FileReader();
 			reader.onload = function (e) {
+				image = new Image();
+				image.onload = imageReload;
 				image.src = e.target.result;
 			};
 			reader.readAsDataURL(file);
 			dreamDejavu.reset();
+			dropSomething.reset();
 			dreamRemotely(file);
 		}
 	}
@@ -495,17 +516,70 @@
 			dropFile(files[0]);
 	}, false);
 
-	window.addEventListener("resize", function (e) {
-		redraw(image);
-		dreamDejavu.reset();
-		if (classify) {
-			classify.reset();
-			dreamDejavu.do();
+	document.getElementById("overlay").addEventListener("click", function (e) {
+		if (e.clientY > document.getElementById("overlay").height - 110) {
+			window.open("http://github.com/liuliu/docomputersdream");
 		}
-		for (var i = 0; i < rects.length; i++) {
-			rects[i].reset();
-		}
-		document.getElementById("canvas").style.opacity = canvasOpacity = 0;
-		docomputersdream.restart();
 	});
+
+	window.addEventListener("resize", function (e) {
+		if (image) {
+			redraw(image);
+			dreamDejavu.reset();
+			if (classify) {
+				classify.reset();
+				dreamDejavu.do();
+			}
+			for (var i = 0; i < rects.length; i++) {
+				rects[i].reset();
+			}
+			dropSomething.reset();
+			document.getElementById("output").style.opacity = canvasOpacity = 0;
+			docomputersdream.restart();
+		} else {
+			resizeViewport(640, 480);
+		}
+	});
+
+	resizeViewport(640, 480);
+
+	docomputersdream.restart();
+
+	var timeoutID;
+
+	dropSomething.setDone(function () {
+		if (timeoutID) {
+			window.clearTimeout(timeoutID);
+		}
+		timeoutID = window.setTimeout(function () {
+			ptail();
+		}, 8000);
+	});
+
+	// load the dream from server
+	function ptail() {
+		var request = new XMLHttpRequest();
+		request.open("GET", "/api/latest");
+		request.onload = function () {
+			if (this.responseText && this.responseText.length > 0) {
+				var response = JSON.parse(this.responseText);
+				if (!image || response.url != image.url) {
+					dreamDejavu.reset();
+					dropSomething.reset();
+					classify = null;
+					rects = [];
+					image = new Image();
+					image.crossOrigin = "Anonymous";
+					image.onload = function () {
+						imageReload();
+						parseDream(response.meta);
+					}
+					image.url = image.src = response.url;
+				}
+			}
+		};
+		request.send();
+	}
+
+	ptail();
 })();

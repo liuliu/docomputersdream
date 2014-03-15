@@ -11,9 +11,12 @@ import (
 	"strings"
 
 	"github.com/garyburd/redigo/redis"
+	"launchpad.net/goamz/aws"
+	"launchpad.net/goamz/s3"
 )
 
 var conn redis.Conn
+var docomputersdream *s3.Bucket
 
 func classify(out io.Writer, data []byte) {
 	// do the classification first
@@ -46,7 +49,15 @@ func word(out io.Writer, data []byte) {
 	io.Copy(out, resp.Body)
 }
 
-func root(response http.ResponseWriter, request *http.Request) {
+func latest(response http.ResponseWriter, request *http.Request) {
+	resp, _ := redis.Bytes(conn.Do("GET", "LATEST"))
+	if resp == nil {
+		return
+	}
+	io.Copy(response, bytes.NewReader(resp))
+}
+
+func api(response http.ResponseWriter, request *http.Request) {
 	source, _, err := request.FormFile("source")
 	if err != nil {
 		return
@@ -56,30 +67,45 @@ func root(response http.ResponseWriter, request *http.Request) {
 	sha.Write(data)
 	identifier := strings.Trim(base64.URLEncoding.EncodeToString(sha.Sum(nil)), "=")
 	resp, _ := redis.Bytes(conn.Do("GET", identifier))
+	var json string
 	if resp != nil && len(resp) > 0 {
 		io.Copy(response, bytes.NewReader(resp))
+		json = string(resp)
 	} else {
-		buffer := new(bytes.Buffer);
-		fmt.Fprintf(buffer, "{\"classify\":");
-		classify(buffer, data);
-		fmt.Fprintf(buffer, ",\"face\":");
-		face(buffer, data);
-		fmt.Fprintf(buffer, ",\"car\":");
-		car(buffer, data);
-		fmt.Fprintf(buffer, ",\"pedestrian\":");
-		pedestrian(buffer, data);
-		fmt.Fprintf(buffer, ",\"word\":");
-		word(buffer, data);
-		fmt.Fprintf(buffer, "}");
-		json := buffer.String()
-		io.Copy(response, buffer);
+		docomputersdream.Put(fmt.Sprintf("%s.jpg", identifier), data, "image/jpeg", s3.PublicRead)
+		buffer := new(bytes.Buffer)
+		fmt.Fprintf(buffer, "{\"url\":\"http://static.docomputersdream.org/%s.jpg\",\"meta\":{\"classify\":", identifier)
+		classify(buffer, data)
+		fmt.Fprintf(buffer, ",\"face\":")
+		face(buffer, data)
+		fmt.Fprintf(buffer, ",\"car\":")
+		car(buffer, data)
+		fmt.Fprintf(buffer, ",\"pedestrian\":")
+		pedestrian(buffer, data)
+		fmt.Fprintf(buffer, ",\"word\":")
+		word(buffer, data)
+		fmt.Fprintf(buffer, "}}")
+		json = buffer.String()
+		io.Copy(response, buffer)
 		conn.Do("SET", identifier, json)
 	}
+	conn.Do("SET", "LATEST", json)
 }
 
 func main() {
-	conn, _ = redis.Dial("tcp", "127.0.0.1:6379")
-	http.HandleFunc("/api/ccv", root)
+	var err error
+	conn, err = redis.Dial("tcp", "127.0.0.1:6379")
+	if (err != nil) {
+		panic(err.Error())
+	}
+	auth, err := aws.EnvAuth()
+	if (err != nil) {
+		panic(err.Error())
+	}
+	sto := s3.New(auth, aws.USEast)
+	docomputersdream = sto.Bucket("static.docomputersdream.org")
+	http.HandleFunc("/api/latest", latest)
+	http.HandleFunc("/api/ccv", api)
 	http.Handle("/", http.FileServer(http.Dir("./site/")))
 	http.ListenAndServe(":8080", nil)
 }
