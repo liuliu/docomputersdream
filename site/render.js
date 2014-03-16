@@ -513,6 +513,14 @@
 		dreamDejavu.do();
 	}
 
+	function setLocationHash(url) {
+		var paths = url.split("/");
+		if (paths.length > 0) {
+			var q = paths[paths.length - 1].split(".");
+			window.location.hash = "#" + q[0];
+		}
+	}
+
 	function dreamRemotely(file) {
 		classify = null;
 		rects = [];
@@ -523,6 +531,7 @@
 		request.onload = function () {
 			var response = JSON.parse(this.responseText);
 			image.url = response.url;
+			setLocationHash(image.url);
 			parseDream(response.meta);
 		};
 		request.send(formData);
@@ -617,11 +626,38 @@
 						parseDream(response.meta);
 					}
 					image.url = image.src = response.url;
+					setLocationHash(image.url);
 				}
 			}
 		};
 		request.send();
 	}
 
-	ptail();
+	var designated = window.location.hash.substr(1);
+	if (designated && designated.length > 0) {
+		var request = new XMLHttpRequest();
+		request.open("GET", "/api/?q=" + designated);
+		request.onload = function () {
+			if (this.responseText && this.responseText.length > 0) {
+				var response = JSON.parse(this.responseText);
+				if (!image || response.url != image.url) {
+					dreamDejavu.reset();
+					dropSomething.reset();
+					classify = null;
+					rects = [];
+					image = new Image();
+					image.crossOrigin = "Anonymous";
+					image.onload = function () {
+						imageReload();
+						parseDream(response.meta);
+					}
+					image.url = image.src = response.url;
+					setLocationHash(image.url);
+				}
+			}
+		};
+		request.send();
+	} else {
+		ptail();
+	}
 })();

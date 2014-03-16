@@ -57,7 +57,48 @@ func latest(response http.ResponseWriter, request *http.Request) {
 	io.Copy(response, bytes.NewReader(resp))
 }
 
+func parse(q string, data []byte) *bytes.Buffer {
+	buffer := new(bytes.Buffer)
+	fmt.Fprintf(buffer, "{\"url\":\"http://static.docomputersdream.org/%s.jpg\",\"meta\":{\"classify\":", q)
+	classify(buffer, data)
+	fmt.Fprintf(buffer, ",\"face\":")
+	face(buffer, data)
+	fmt.Fprintf(buffer, ",\"car\":")
+	car(buffer, data)
+	fmt.Fprintf(buffer, ",\"pedestrian\":")
+	pedestrian(buffer, data)
+	fmt.Fprintf(buffer, ",\"word\":")
+	word(buffer, data)
+	fmt.Fprintf(buffer, "}}")
+	return buffer
+}
+
 func api(response http.ResponseWriter, request *http.Request) {
+	q := request.FormValue("q")
+	if len(q) <= 0 {
+		return
+	}
+	resp, _ := redis.Bytes(conn.Do("GET", q))
+	var json string
+	if resp != nil && len(resp) > 0 {
+		io.Copy(response, bytes.NewReader(resp))
+		json = string(resp)
+	} else {
+		resp, err := http.Get(fmt.Sprintf("http://static.docomputersdream.org/%s.jpg", q))
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		data, _ := ioutil.ReadAll(resp.Body)
+		buffer := parse(q, data)
+		json = buffer.String()
+		io.Copy(response, buffer)
+		conn.Do("SET", q, json)
+	}
+	conn.Do("SET", "LATEST", json)
+}
+
+func ccv(response http.ResponseWriter, request *http.Request) {
 	source, _, err := request.FormFile("source")
 	if err != nil {
 		return
@@ -73,18 +114,7 @@ func api(response http.ResponseWriter, request *http.Request) {
 		json = string(resp)
 	} else {
 		docomputersdream.Put(fmt.Sprintf("%s.jpg", identifier), data, "image/jpeg", s3.PublicRead)
-		buffer := new(bytes.Buffer)
-		fmt.Fprintf(buffer, "{\"url\":\"http://static.docomputersdream.org/%s.jpg\",\"meta\":{\"classify\":", identifier)
-		classify(buffer, data)
-		fmt.Fprintf(buffer, ",\"face\":")
-		face(buffer, data)
-		fmt.Fprintf(buffer, ",\"car\":")
-		car(buffer, data)
-		fmt.Fprintf(buffer, ",\"pedestrian\":")
-		pedestrian(buffer, data)
-		fmt.Fprintf(buffer, ",\"word\":")
-		word(buffer, data)
-		fmt.Fprintf(buffer, "}}")
+		buffer := parse(identifier, data)
 		json = buffer.String()
 		io.Copy(response, buffer)
 		conn.Do("SET", identifier, json)
@@ -105,7 +135,8 @@ func main() {
 	sto := s3.New(auth, aws.USEast)
 	docomputersdream = sto.Bucket("static.docomputersdream.org")
 	http.HandleFunc("/api/latest", latest)
-	http.HandleFunc("/api/ccv", api)
+	http.HandleFunc("/api/ccv", ccv)
+	http.HandleFunc("/api/", api)
 	http.Handle("/", http.FileServer(http.Dir("./site/")))
 	http.ListenAndServe(":8080", nil)
 }
