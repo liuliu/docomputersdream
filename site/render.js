@@ -395,14 +395,42 @@
 		}
 	}
 
+	function detectSubsampling(img) {
+		var iw = img.naturalWidth, ih = img.naturalHeight;
+		if (iw * ih > 1024 * 1024) { // subsampling may happen over megapixel image
+			var canvas = document.createElement('canvas');
+			canvas.width = canvas.height = 1;
+			var ctx = canvas.getContext('2d');
+			ctx.drawImage(img, -iw + 1, 0);
+			// subsampled image becomes half smaller in rendering size.
+			// check alpha channel value to confirm image is covering edge pixel or not.
+			// if alpha value is 0 image is not covering, hence subsampled.
+			return ctx.getImageData(0, 0, 1, 1).data[3] === 0;
+		} else {
+			return false;
+		}
+	}
+
 	function redraw(image) {
 		var blur = document.getElementById("blur");
 		var canvas = document.getElementById("output");
 		var ctx = canvas.getContext("2d");
 		var newSize = resizeViewport(image.naturalWidth, image.naturalHeight);
 		var newWidth = newSize.width, newHeight = newSize.height;
-		ctx.drawImage(image, 0, 0, newWidth, newHeight);
-		blur.getContext("2d").drawImage(image, 0, 0, newWidth, newHeight);
+		// tiling the image to avoid bug on iPad for larger than 2M image
+		var subsampling = detectSubsampling(image);
+		var tileWidth = Math.ceil(newWidth / 4), tileHeight = Math.ceil(newHeight / 4);
+		var tileNaturalWidth = Math.ceil(image.naturalWidth / (subsampling ? 8 : 4)), tileNaturalHeight = Math.ceil(image.naturalHeight / (subsampling ? 8 : 4));
+		for (var x = 0; x < 4; x++) {
+			var residualWidth = Math.min(tileWidth, newWidth - tileWidth * x);
+			var naturalWidth = Math.min(tileNaturalWidth, image.naturalWidth / (subsampling ? 2 : 1) - tileNaturalWidth * x);
+			for (var y = 0; y < 4; y++) {
+				var residualHeight = Math.min(tileHeight, newHeight - tileHeight * y);
+				var naturalHeight = Math.min(tileNaturalHeight, image.naturalHeight / (subsampling ? 2 : 1) - tileNaturalHeight * y);
+				ctx.drawImage(image, tileNaturalWidth * x, tileNaturalHeight * y, naturalWidth, naturalHeight, tileWidth * x, tileHeight * y, residualWidth, residualHeight);
+				blur.getContext("2d").drawImage(image, tileNaturalWidth * x, tileNaturalHeight * y, naturalWidth, naturalHeight, tileWidth * x, tileHeight * y, residualWidth, residualHeight);
+			}
+		}
 		stackBlurCanvasRGBA("blur", 0, 0, newWidth, newHeight, 10);
 		canvas.style.opacity = canvasOpacity = 0;
 
@@ -419,7 +447,21 @@
 			fillWidth = image.naturalWidth;
 			fillHeight = window.innerHeight * image.naturalWidth / window.innerWidth;
 		}
-		bctx.drawImage(image, (image.naturalWidth - fillWidth) / 2, (image.naturalHeight - fillHeight) / 2, fillWidth, fillHeight, 0, 0, window.innerWidth, window.innerHeight);
+		if (subsampling) {
+			fillWidth = fillWidth / 2;
+			fillHeight = fillHeight / 2;
+		}
+		tileWidth = Math.ceil(window.innerWidth / 4), tileHeight = Math.ceil(window.innerHeight / 4);
+		tileNaturalWidth = Math.ceil(fillWidth / 4), tileNaturalHeight = Math.ceil(fillHeight / 4);
+		for (var x = 0; x < 4; x++) {
+			var residualWidth = Math.min(tileWidth, window.innerWidth - tileWidth * x);
+			var naturalWidth = Math.min(tileNaturalWidth, fillWidth - tileNaturalWidth * x);
+			for (var y = 0; y < 4; y++) {
+				var residualHeight = Math.min(tileHeight, window.innerHeight - tileHeight * y);
+				var naturalHeight = Math.min(tileNaturalHeight, fillHeight - tileNaturalHeight * y);
+				bctx.drawImage(image, (image.naturalWidth / (subsampling ? 2 : 1) - fillWidth) / 2 + tileNaturalWidth * x, (image.naturalHeight / (subsampling ? 2 : 1) - fillHeight) / 2 + tileNaturalHeight * y, tileNaturalWidth, tileNaturalHeight, tileWidth * x, tileHeight * y, residualWidth, residualHeight);
+			}
+		}
 		stackBlurCanvasRGBA("background", 0, 0, window.innerWidth, window.innerHeight, 8);
 	}
 
