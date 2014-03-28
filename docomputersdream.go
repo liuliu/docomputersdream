@@ -20,31 +20,46 @@ var docomputersdream *s3.Bucket
 
 func classify(out io.Writer, data []byte) {
 	// do the classification first
-	resp, _ := http.Post("http://localhost:3350/convnet/classify?model=image-net", "image/unknown", bytes.NewReader(data))
+	resp, err := http.Post("http://localhost:3350/convnet/classify?model=image-net", "image/unknown", bytes.NewReader(data))
+	if err != nil {
+		return
+	}
 	defer resp.Body.Close()
 	io.Copy(out, resp.Body)
 }
 
 func face(out io.Writer, data []byte) {
-	resp, _ := http.Post("http://localhost:3350/bbf/detect.objects?model=face&max_dimension=800", "image/unknown", bytes.NewReader(data))
+	resp, err := http.Post("http://localhost:3350/bbf/detect.objects?model=face&max_dimension=800", "image/unknown", bytes.NewReader(data))
+	if err != nil {
+		return
+	}
 	defer resp.Body.Close()
 	io.Copy(out, resp.Body)
 }
 
 func car(out io.Writer, data []byte) {
-	resp, _ := http.Post("http://localhost:3350/dpm/detect.objects?model=car&max_dimension=800", "image/unknown", bytes.NewReader(data))
+	resp, err := http.Post("http://localhost:3350/dpm/detect.objects?model=car&max_dimension=800", "image/unknown", bytes.NewReader(data))
+	if err != nil {
+		return
+	}
 	defer resp.Body.Close()
 	io.Copy(out, resp.Body)
 }
 
 func pedestrian(out io.Writer, data []byte) {
-	resp, _ := http.Post("http://localhost:3350/icf/detect.objects?model=pedestrian&max_dimension=800", "image/unknown", bytes.NewReader(data))
+	resp, err := http.Post("http://localhost:3350/icf/detect.objects?model=pedestrian&max_dimension=800", "image/unknown", bytes.NewReader(data))
+	if err != nil {
+		return
+	}
 	defer resp.Body.Close()
 	io.Copy(out, resp.Body)
 }
 
 func word(out io.Writer, data []byte) {
-	resp, _ := http.Post("http://localhost:3350/swt/detect.words?max_dimension=1024", "image/unknown", bytes.NewReader(data))
+	resp, err := http.Post("http://localhost:3350/swt/detect.words?max_dimension=1024", "image/unknown", bytes.NewReader(data))
+	if err != nil {
+		return
+	}
 	defer resp.Body.Close()
 	io.Copy(out, resp.Body)
 }
