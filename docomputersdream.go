@@ -15,8 +15,11 @@ import (
 	"launchpad.net/goamz/s3"
 )
 
-var conn redis.Conn
 var docomputersdream *s3.Bucket
+
+func dial() (redis.Conn, error) {
+	return redis.Dial("tcp", "127.0.0.1:6379")
+}
 
 func classify(out io.Writer, data []byte) {
 	// do the classification first
@@ -65,6 +68,10 @@ func word(out io.Writer, data []byte) {
 }
 
 func latest(response http.ResponseWriter, request *http.Request) {
+	conn, err := dial()
+	if err != nil {
+		return
+	}
 	resp, _ := redis.Bytes(conn.Do("GET", "LATEST"))
 	if resp == nil {
 		return
@@ -89,6 +96,10 @@ func parse(q string, data []byte) *bytes.Buffer {
 }
 
 func api(response http.ResponseWriter, request *http.Request) {
+	conn, err := dial()
+	if err != nil {
+		return
+	}
 	q := request.FormValue("q")
 	if len(q) <= 0 {
 		return
@@ -114,6 +125,10 @@ func api(response http.ResponseWriter, request *http.Request) {
 }
 
 func ccv(response http.ResponseWriter, request *http.Request) {
+	conn, err := dial()
+	if err != nil {
+		return
+	}
 	source, _, err := request.FormFile("source")
 	if err != nil {
 		return
@@ -138,11 +153,6 @@ func ccv(response http.ResponseWriter, request *http.Request) {
 }
 
 func main() {
-	var err error
-	conn, err = redis.Dial("tcp", "127.0.0.1:6379")
-	if (err != nil) {
-		panic(err.Error())
-	}
 	auth, err := aws.EnvAuth()
 	if (err != nil) {
 		panic(err.Error())
