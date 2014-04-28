@@ -23,7 +23,7 @@ func dial() (redis.Conn, error) {
 
 func classify(out io.Writer, data []byte) {
 	// do the classification first
-	resp, err := http.Post("http://localhost:3350/convnet/classify?model=image-net", "image/unknown", bytes.NewReader(data))
+	resp, err := http.Post("http://localhost:3350/convnet/classify?model=image-net-2010", "image/unknown", bytes.NewReader(data))
 	if err != nil {
 		return
 	}
